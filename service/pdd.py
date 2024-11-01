@@ -8,8 +8,11 @@ from model.order_info import OrderInfo
 from loguru import logger
 
 from service.device import open_device
+from service.wechat import notify_user
 
 logger = logger.bind(module="pdd")
+
+notify_username = "星辰"
 
 
 def parse_and_save_trace_info(d):
@@ -96,13 +99,13 @@ def parse_and_save_trace_info(d):
                 '/android.view.ViewGroup[1]'
                 '/android.widget.TextView[3]').click()
         elif d.xpath('//*[@resource-id="android:id/content"]'
-                '/android.widget.FrameLayout[1]'
-                '/android.view.ViewGroup[1]'
-                '/android.widget.FrameLayout[2]'
-                '/android.support.v7.widget.RecyclerView[1]'
-                '/android.widget.LinearLayout[1]'
-                '/android.view.ViewGroup[1]'
-                '/android.widget.TextView[3]').exists:
+                     '/android.widget.FrameLayout[1]'
+                     '/android.view.ViewGroup[1]'
+                     '/android.widget.FrameLayout[2]'
+                     '/android.support.v7.widget.RecyclerView[1]'
+                     '/android.widget.LinearLayout[1]'
+                     '/android.view.ViewGroup[1]'
+                     '/android.widget.TextView[3]').exists:
             d.xpath('//*[@resource-id="android:id/content"]'
                     '/android.widget.FrameLayout[1]'
                     '/android.view.ViewGroup[1]'
@@ -233,7 +236,9 @@ def open_pdd_and_deliver():
                 product_config_list = ProductConfig.get_product_config_list_by_product_id(product.id)
                 deliver(d, order_info, municipality_list, pdd_search_name, product_config_list)
             else:
-                # TODO 下单商品未配置 微信告警
+                # 下单商品未配置 微信告警
+                notify_message = f"【自动化通知】用户：{order_info.nickname}下单的商品未配置:{order_info.product_name}, 请尽快配置"
+                notify_user(notify_username, notify_message)
                 pass
 
     # 关闭 app
@@ -423,15 +428,28 @@ def deliver(d, order_info, municipality_list, pdd_search_name, product_config_li
             time.sleep(2)
         d(textContains=pdd_search_size, className='android.widget.TextView').click()
         if d(textContains='该款式售罄', className='android.widget.TextView'):
-            # TODO 没货 告警 微信提醒
+            # 没货 告警 微信提醒
+            notify_message = f"【自动化通知】用户：{order_info.nickname}下单的商品没货:{order_info.product_name}, 请尽快寻找供应商!"
+            notify_user(notify_username, notify_message)
             order_info.update_order_status(7)
-            logger.warning(f"【拼多多】用户:{order_info.nickname}购买的:{pdd_search_name},无货")
+            logger.warning(f"【拼多多】用户:{order_info.nickname}购买的商品:{pdd_search_name}, 无货")
             return
         time.sleep(1)
     order = d(textContains='0元下单', className='android.widget.TextView')
     cost_price_text = order.info.get('text')
     # 获取商品总成本价
     cost_price = cost_price_text.split('¥')[1]
+
+    # 如果商品成本价 大于 商品销售价 发送微信提醒
+    if cost_price > order_info.sale_price:
+        notify_message = f"【自动化通知】用户:{order_info.nickname}:下单的商品, " \
+                         f"product_name:{order_info.product_name},sale_price:{order_info.sale_price}," \
+                         f"cost_price:{order_info.cost_price}, 价格超标, 无法下单"
+        notify_user(notify_username, notify_message)
+        logger.info(f"【拼多多】用户:{order_info.nickname}下单的商品:{order_info.product_name},"
+                    f"sale_price:{order_info.sale_price},"
+                    f"cost_price:{order_info.cost_price}, 价格超标, 无法下单")
+        return
     # 下单
     order.click()
     time.sleep(10)
