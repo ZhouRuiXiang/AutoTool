@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 from playhouse.shortcuts import model_to_dict
-from models import OrderInfo
+from model.order_info import OrderInfo
 
 app = Flask(__name__)
 

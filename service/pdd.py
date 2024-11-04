@@ -9,6 +9,7 @@ from loguru import logger
 
 from service.device import open_device
 from service.wechat import notify_user
+from decimal import Decimal
 
 logger = logger.bind(module="pdd")
 
@@ -137,79 +138,96 @@ def parse_and_save_trace_info(d):
 
 
 def get_trace_number():
-    d = open_device()
-    logger.info("【拼多多】获取物流单号, 正在获取待收货订单的物流单号")
-    # 关闭再打开 pdd
-    d.app_stop('com.xunmeng.pinduoduo')
-    d.app_start('com.xunmeng.pinduoduo')
+    try:
+        d = open_device()
+        logger.info("【拼多多】获取物流单号, 正在获取待收货订单的物流单号")
+        # 关闭再打开 pdd
+        d.app_stop('com.xunmeng.pinduoduo')
+        d.app_start('com.xunmeng.pinduoduo')
 
-    time.sleep(5)
-    # 关闭多余弹出框
-    close_modal(d)
-    # 个人中心
-    d(text='个人中心', className='android.widget.TextView').click()
-    time.sleep(1)
-    # 待收货
-    d(text='待收货', resourceId='com.xunmeng.pinduoduo:id/pdd', className='android.widget.TextView').click()
+        time.sleep(5)
+        # 关闭多余弹出框
+        close_modal(d)
+        # 个人中心
+        d(text='个人中心', className='android.widget.TextView').click()
+        time.sleep(1)
+        # 待收货
+        d(text='待收货', resourceId='com.xunmeng.pinduoduo:id/pdd', className='android.widget.TextView').click()
 
-    while not d.xpath('//*[@text="没找到订单？试试查看全部或切换账号"]').exists:
-        for i in range(4):
+        while not d.xpath('//*[@text="没找到订单？试试查看全部或切换账号"]').exists:
+            for i in range(4):
+                i = i + 1
+                trace_element_1_xpath = f'//android.support.v7.widget.RecyclerView/android.view.ViewGroup[{i}]' \
+                    f'/android.widget.FrameLayout[2]/android.widget.LinearLayout[1]/android.widget.TextView[3]'
+
+                trace_element_2_xpath = f'//android.support.v7.widget.RecyclerView/android.view.ViewGroup[{i}]' \
+                                      f'/android.widget.FrameLayout[1]/android.widget.LinearLayout[1]/android.widget.TextView[3]'
+                # 商品列表
+                product_element_xpath = f'//android.support.v7.widget.RecyclerView' \
+                                        f'/android.view.ViewGroup[{i}]' \
+                                        f'/android.view.ViewGroup[2]'
+                if d.xpath(product_element_xpath).exists:
+
+                    if d.xpath(trace_element_1_xpath).exists and d.xpath(trace_element_1_xpath).info.get('text') == '查看物流':
+                        trace_element_xpath = trace_element_1_xpath
+                    elif d.xpath(trace_element_2_xpath).exists and d.xpath(trace_element_2_xpath).info.get('text') == '查看物流':
+                        trace_element_xpath = trace_element_2_xpath
+                    else:
+                        trace_element_xpath = None
+                    #     logger.warning("【拼多多】获取物流单号, 未获取到查看物流按钮")
+                    #     notify_message = f"【自动化通知】pdd获取物流单号按钮异常, 请尽快修复程序"
+                    #     notify_user(notify_username, notify_message)
+                    #     return
+
+                    if trace_element_xpath is not None and d.xpath(trace_element_xpath).exists:
+                        # 查看物流
+                        btn_text = d.xpath(trace_element_xpath).info.get('text')
+                        if btn_text != '查看物流':
+                            continue
+
+                        d.xpath(trace_element_xpath).click()
+                        time.sleep(3)
+                        # 修改订单状态及物流信息
+                        end_flag = parse_and_save_trace_info(d)
+                        time.sleep(2)
+                        # 返回按钮
+                        d.xpath('//*[@resource-id="android:id/content"]'
+                                '/android.widget.FrameLayout[1]'
+                                '/android.widget.RelativeLayout[1]/android.view.ViewGroup[1]'
+                                '/android.widget.ImageView[1]').click()
+                        if end_flag:
+                            d.app_stop('com.xunmeng.pinduoduo')
+                            return
+
+            width, height = d.window_size()
+            # 向下滑动页面
+            d.swipe(width // 2, height * 3 // 4, width // 2, height // 15, 1.2)
+
+        for i in range(3):
             i = i + 1
             trace_element_xpath = f'//android.support.v7.widget.RecyclerView/android.view.ViewGroup[{i}]' \
-                # f'/android.widget.FrameLayout[2]/android.widget.LinearLayout[1]/android.widget.TextView[3]'
-
-            trace_element_xpath = f'//android.support.v7.widget.RecyclerView/android.view.ViewGroup[{i}]' \
-                                  f'/android.widget.FrameLayout[1]/android.widget.LinearLayout[1]/android.widget.TextView[3]'
-            # 商品列表
-            product_element_xpath = f'//android.support.v7.widget.RecyclerView' \
-                                    f'/android.view.ViewGroup[{i}]' \
-                                    f'/android.view.ViewGroup[2]'
-            if d.xpath(product_element_xpath).exists:
-                if d.xpath(trace_element_xpath).exists:
-                    # 查看物流
-                    btn_text = d.xpath(trace_element_xpath).info.get('text')
-                    if btn_text != '查看物流':
-                        continue
-                    d.xpath(trace_element_xpath).click()
-                    time.sleep(3)
-                    # 修改订单状态及物流信息
-                    end_flag = parse_and_save_trace_info(d)
-                    time.sleep(2)
-                    # 返回按钮
-                    d.xpath('//*[@resource-id="android:id/content"]'
-                            '/android.widget.FrameLayout[1]'
-                            '/android.widget.RelativeLayout[1]/android.view.ViewGroup[1]'
-                            '/android.widget.ImageView[1]').click()
-                    if end_flag:
-                        d.app_stop('com.xunmeng.pinduoduo')
-                        return
-
-        width, height = d.window_size()
-        # 向下滑动页面
-        d.swipe(width // 2, height * 3 // 4, width // 2, height // 15, 1.2)
-
-    for i in range(3):
-        i = i + 1
-        trace_element_xpath = f'//android.support.v7.widget.RecyclerView/android.view.ViewGroup[{i}]' \
-                              f'/android.widget.FrameLayout[2]/android.widget.LinearLayout[1]' \
-                              f'/android.widget.TextView[3]'
-        if d.xpath(trace_element_xpath).exists:
-            # 查看物流
-            btn_text = d.xpath(trace_element_xpath).info.get('text')
-            if btn_text != '查看物流':
-                continue
-            d.xpath(trace_element_xpath).click()
-            time.sleep(3)
-            # 修改订单状态及物流信息
-            end_flag = parse_and_save_trace_info(d)
-            time.sleep(2)
-            # 返回按钮
-            d.xpath('//*[@resource-id="android:id/content"]/android.widget.FrameLayout[1]'
-                    '/android.widget.RelativeLayout[1]/android.view.ViewGroup[1]'
-                    '/android.widget.ImageView[1]').click()
-            if end_flag:
-                d.app_stop('com.xunmeng.pinduoduo')
-                return
+                                  f'/android.widget.FrameLayout[2]/android.widget.LinearLayout[1]' \
+                                  f'/android.widget.TextView[3]'
+            if d.xpath(trace_element_xpath).exists:
+                # 查看物流
+                btn_text = d.xpath(trace_element_xpath).info.get('text')
+                if btn_text != '查看物流':
+                    continue
+                d.xpath(trace_element_xpath).click()
+                time.sleep(3)
+                # 修改订单状态及物流信息
+                end_flag = parse_and_save_trace_info(d)
+                time.sleep(2)
+                # 返回按钮
+                d.xpath('//*[@resource-id="android:id/content"]/android.widget.FrameLayout[1]'
+                        '/android.widget.RelativeLayout[1]/android.view.ViewGroup[1]'
+                        '/android.widget.ImageView[1]').click()
+                if end_flag:
+                    d.app_stop('com.xunmeng.pinduoduo')
+                    return
+    except Exception as e:
+        logger.error(f"【拼多多】查看物流, 发生异常")
+        logger.catch(e)
 
 
 def open_pdd_and_deliver():
@@ -229,17 +247,20 @@ def open_pdd_and_deliver():
     if len(order_list) == 0:
         logger.info("【拼多多】暂无下单数据, 请稍候再试!")
     for order_info in order_list:
+        found_flag = False
         for product in product_list:
             if product.name in order_info.product_name:
+                found_flag = True
                 pdd_search_name = product.pdd_search_name
                 # 获取商品配置信息
                 product_config_list = ProductConfig.get_product_config_list_by_product_id(product.id)
                 deliver(d, order_info, municipality_list, pdd_search_name, product_config_list)
-            else:
-                # 下单商品未配置 微信告警
-                notify_message = f"【自动化通知】用户：{order_info.nickname}下单的商品未配置:{order_info.product_name}, 请尽快配置"
-                notify_user(notify_username, notify_message)
-                pass
+        if not found_flag:
+            # 下单商品未配置 微信告警
+            notify_message = f"【自动化通知】用户：{order_info.nickname}下单的商品未配置:{order_info.product_name}, 请尽快配置"
+            notify_user(notify_username, notify_message)
+            pass
+
 
     # 关闭 app
     d.app_stop('com.xunmeng.pinduoduo')
@@ -279,17 +300,21 @@ def deliver(d, order_info, municipality_list, pdd_search_name, product_config_li
     d(text='管理', className='android.widget.TextView').click()
     time.sleep(1)
     # 收藏的商品
-    # d.xpath(
-    #     '//*[@resource-id="android:id/content"]/android.view.ViewGroup[1]'
-    #     '/android.widget.FrameLayout[3]/android.view.ViewGroup[1]/android.widget.FrameLayout[1]'
-    #     '/android.support.v7.widget.RecyclerView[1]/android.widget.LinearLayout[1]'
-    #     '/android.widget.FrameLayout[1]/android.view.ViewGroup[1]/android.widget.ImageView[1]').click()
 
-    d.xpath(
+    favor_product = d.xpath(
+        '//*[@resource-id="android:id/content"]/android.view.ViewGroup[1]'
+        '/android.widget.FrameLayout[3]/android.view.ViewGroup[1]/android.widget.FrameLayout[1]'
+        '/android.support.v7.widget.RecyclerView[1]/android.widget.LinearLayout[1]'
+        '/android.widget.FrameLayout[1]/android.view.ViewGroup[1]/android.widget.ImageView[1]')
+    favor_2_product = d.xpath(
         '//*[@resource-id="android:id/content"]/android.view.ViewGroup[1]'
         '/android.widget.FrameLayout[3]/android.view.ViewGroup[1]/android.widget.FrameLayout[1]'
         '/android.support.v7.widget.RecyclerView[1]/android.widget.FrameLayout[1]'
-        '/android.widget.FrameLayout[1]/android.view.ViewGroup[1]/android.widget.ImageView[1]').click()
+        '/android.widget.FrameLayout[1]/android.view.ViewGroup[1]/android.widget.ImageView[1]')
+    if favor_product.exists:
+        favor_product.click()
+    elif favor_2_product.exists:
+        favor_2_product.click()
 
     d(textContains='发起拼单', resourceId='com.xunmeng.pinduoduo:id/pdd').click()
     time.sleep(2)
@@ -441,7 +466,7 @@ def deliver(d, order_info, municipality_list, pdd_search_name, product_config_li
     cost_price = cost_price_text.split('¥')[1]
 
     # 如果商品成本价 大于 商品销售价 发送微信提醒
-    if cost_price > order_info.sale_price:
+    if Decimal(cost_price) > order_info.sale_price:
         notify_message = f"【自动化通知】用户:{order_info.nickname}:下单的商品, " \
                          f"product_name:{order_info.product_name},sale_price:{order_info.sale_price}," \
                          f"cost_price:{order_info.cost_price}, 价格超标, 无法下单"
@@ -460,10 +485,10 @@ def deliver(d, order_info, municipality_list, pdd_search_name, product_config_li
     # d.click(math.floor(width * 0.5), math.floor(height * 0.78))
     d.click(math.floor(width * 0.5), math.floor(height * 0.75))
     d.click(math.floor(width * 0.5), math.floor(height * 0.65))
-
+    time.sleep(3)
     # 获取pdd订单编号
     share_text_element = d.xpath('//*[@resource-id="com.xunmeng.pinduoduo:id/tv_title"]')
-    time.sleep(3)
+    time.sleep(5)
     if share_text_element.exists and share_text_element.info.get('text') == '待分享':
         d.click(math.floor(width * 0.918), math.floor(height * 0.5))
 
@@ -486,6 +511,9 @@ def deliver(d, order_info, municipality_list, pdd_search_name, product_config_li
 
     else:
         logger.error(f"【拼多多】用户:{order_info.nickname}:保存pdd_order_id失败, 未找到pdd_order_id")
+        notify_message = f"用户:{order_info.nickname}:下单的商品, " \
+            f"product_name:{order_info.product_name}, 保存pdd_order_id失败, 未找到pdd_order_id"
+        notify_user(notify_username, notify_message)
 
 
 def close_modal(d):

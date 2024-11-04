@@ -233,15 +233,16 @@ def deliver_and_notify_user():
     # 点击“我卖出的”
     sell_out_elements = d(descriptionContains="我卖出的", className='android.widget.ImageView')
     sell_out_elements.click()
-    time.sleep(1)
+    time.sleep(5)
     # 点击“待发货”
     sell_out_elements = d(descriptionContains="待发货", className='android.view.View')
     sell_out_elements.click()
-    time.sleep(1)
+    time.sleep(5)
     product_element_scroll_xpath = '//android.widget.ScrollView'
     if d.xpath(product_element_scroll_xpath).exists:
         # 超过四个商品待发货  带滚轮
         while not d.xpath('//*[@content-desc="哎呀，到底了"]').exists:
+            time.sleep(5)
             width, height = d.window_size()
 
             for i in range(5):
